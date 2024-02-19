@@ -279,3 +279,82 @@ for i in trange(epoch):
     model.train_on_batch(inputs, np.zeros((1, 1)))
     if i%300==299:
         CSLS_test()
+
+        if i==epoch-1:
+        vec = get_embedding()
+        vec = (vec - vec.mean(axis=0)) / (vec.std(axis=0))
+        net = Classfier1(1200,600,300,150,75);
+        loss_function = nn.BCELoss();optimizer = optim.Adam(net.parameters(),lr=1e-3);
+        net.to(device);loss_function.to(device);
+        print("鉴别开始。。。")
+        Lvecpos = np.array([vec[e] for e in triples_1]);Rvecpos = np.array([vec[e] for e in triples_2]);
+        lenclassify0 = Lvecpos.shape[0];
+        martix = np.hstack([Lvecpos, Rvecpos]);martix = torch.tensor(martix,device=device)
+        martix1 = np.hstack([Rvecpos, Lvecpos]);martix1 = torch.tensor(martix1, device=device)
+        y = torch.ones((lenclassify0, 1),device=device);y1 = torch.zeros((lenclassify0, 1),device=device);
+
+        triples_sample = negativasample(triples_1);triples_sample2 = negativasample(triples_1);triples_sample3 = negativasample(triples_1);
+        SRvec1 = np.array([vec[e] for e in triples_sample]);SRvec2 = np.array([vec[e] for e in triples_sample2]);SRvec3 = np.array([vec[e] for e in triples_sample3])
+        martix_ne = np.hstack([Lvecpos, SRvec1]);martix_ne = torch.tensor(martix_ne,device=device)
+        martix_ne2 = np.hstack([Lvecpos, SRvec2]);martix_ne2 = torch.tensor(martix_ne2,device=device)
+        martix_ne3 = np.hstack([Lvecpos, SRvec3]);martix_ne3 = torch.tensor(martix_ne3,device=device)
+
+        triples_samplet = negativasampletail(triples_2);triples_samplet2 = negativasampletail(triples_2);triples_samplet3 = negativasampletail(triples_2);
+        SRvect1 = np.array([vec[e] for e in triples_samplet]);SRvect2 = np.array([vec[e] for e in triples_samplet2]);SRvect3 = np.array([vec[e] for e in triples_samplet3])
+        martix_net = np.hstack([SRvect1,Rvecpos]);martix_net = torch.tensor(martix_net,device=device)
+        martix_net2 = np.hstack([SRvect2,Rvecpos]);martix_net2 = torch.tensor(martix_net2,device=device)
+        martix_net3 = np.hstack([SRvect3,Rvecpos]);martix_net3 = torch.tensor(martix_net3,device=device)
+        for i in range(400):
+            net.train()
+            pred = net(martix);predy1=net(martix1)
+            pred1 = net(martix_ne);pred2 = net(martix_ne2);pred3 = net(martix_ne3);
+            predt1 = net(martix_net);predt2 = net(martix_net2);predt3 = net(martix_net3);
+            loss = loss_function(pred, y);lossy1 = loss_function(predy1, y);
+            loss1 = loss_function(pred1, y1);loss2 = loss_function(pred2, y1);loss3 = loss_function(pred3, y1);
+            losst1 = loss_function(predt1, y1);losst2 = loss_function(predt2, y1);losst3 = loss_function(predt3, y1);
+            loss_all = loss + loss1 + loss2 + loss3 + losst1+losst2+losst3
+            optimizer.zero_grad();loss_all.backward();optimizer.step()
+
+        print(loss_all)
+        Lvecnos = np.array([vec[e] for e in noisy_set_1]);Rvecnos = np.array([vec[e] for e in noisy_set_2])
+        net.eval()
+        len2 = Lvecnos.shape[0];len3 = Lvecnos.shape[1]
+        martixnos = np.hstack([Lvecnos, Rvecnos]);martixnos = torch.tensor(martixnos,device=device)
+        martixnos1 = np.hstack([Rvecnos, Lvecnos]);martixnos1 = torch.tensor(martixnos1, device=device)
+        ynos = net(martixnos);ynos = ynos.cpu().detach().numpy()
+        ynos1 = net(martixnos1);ynos1 = ynos1.cpu().detach().numpy()
+        dictsorthalf = {};
+        lensorthalf = len(ynos)
+        for i in range(lensorthalf):
+            dictsorthalf[i] = ynos[i]
+        sortresult = sorted(dictsorthalf.items(), key=lambda x: x[1],reverse=True)
+        lensorthalf1 = int(lensorthalf * 0.95)
+        tempsorthalf = 0
+        x=0;y=0
+        for name in sortresult:
+            if tempsorthalf < lensorthalf1:
+                x+=1
+                if noisy[name[0]] in noisy1:
+                    triples1.append(noisy[name[0]])
+                    noisy1.remove(noisy[name[0]])
+                else:
+                    triples2.append(noisy[name[0]])
+                    noisy2.remove(noisy[name[0]])
+                if noisy[name[0]] in triples_pos:
+                    y+=1
+            tempsorthalf += 1
+        print(x,y);
+        triples = triples1 + triples2;noisy = noisy1 + noisy2;
+        updatenoisy();
+
+        result = '{:.2%}'.format(y/x)
+        print('这一轮产生了:'+str(x)+"个三元组。。。")
+        print('这一轮产生的三元组中，正确的个数为:' + str(y) + "个，因此正确的比例为："+str(result))
+        print("鉴别结束。。。")
+        adj_matrix, r_index, r_val, rel_matrix, ent_matrix,adj_features,rel_features = update('data/fr_en/', triples1, triples2)
+        triple_size = len(adj_matrix)                       # 考虑三元组及其他的逆三元组合在一起的规模
+        del model;gc.collect()
+        model, get_emb = get_trgat(dropout_rate=0.30, node_size=node_size, rel_size=rel_size, n_attn_heads=1, depth=2,
+                                   gamma=3,
+                                   node_hidden=100, rel_hidden=100, triple_size=triple_size)
+        print("当前三元组的个数：" + str(len(triples)))
